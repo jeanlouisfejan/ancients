@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ancients</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #1a1209;
+      color: #e0d8c0;
+      user-select: none;
+    }
+
+    /* ===== Toolbar ===== */
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 10px;
+      height: 44px;
+      background: #2a1e08;
+      border-bottom: 1px solid #5a3e10;
+      flex-shrink: 0;
+    }
+    #toolbar button {
+      padding: 4px 11px;
+      background: #3a2a0c;
+      color: #e0d8c0;
+      border: 1px solid #7a5a20;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    #toolbar button:hover  { background: #5a3e10; }
+    #toolbar button.active { background: #7a5a20; border-color: #c09040; }
+    .tb-sep { width: 1px; height: 22px; background: #5a3e10; flex-shrink: 0; }
+    #zoom-label { font-size: 12px; color: #907850; min-width: 42px; }
+
+    #map-select {
+      background: #3a2a0c;
+      color: #e0d8c0;
+      border: 1px solid #7a5a20;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    /* ===== Dé ===== */
+    #dice-result {
+      font-size: 26px;
+      line-height: 1;
+      min-width: 30px;
+      text-align: center;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    #dice-result.show { opacity: 1; }
+    @keyframes dice-spin {
+      0%   { transform: rotate(0deg)   scale(0.5); opacity: 0; }
+      60%  { transform: rotate(340deg) scale(1.3); opacity: 1; }
+      100% { transform: rotate(360deg) scale(1);   opacity: 1; }
+    }
+    #dice-result.rolling { animation: dice-spin 0.35s ease-out forwards; }
+
+    /* ===== Main layout ===== */
+    #main { display: flex; height: calc(100vh - 44px); }
+
+    /* ===== Canvas area ===== */
+    #canvas-area {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: #0d0a04;
+      cursor: grab;
+    }
+    #canvas-area.panning        { cursor: grabbing; }
+    #canvas-area.dragging-token { cursor: grabbing; }
+    #canvas-area.drop-target    { outline: 2px solid #c09040; outline-offset: -2px; }
+    #main-canvas { position: absolute; top: 0; left: 0; display: block; }
+
+    /* ===== Pool panel (3 colonnes) ===== */
+    #pool-panel {
+      width: 252px;
+      flex-shrink: 0;
+      background: #221808;
+      border-left: 1px solid #5a3e10;
+      display: flex;
+      flex-direction: column;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    #pool-panel.delete-target {
+      background: #2a1010;
+      border-left-color: #f38ba8;
+    }
+    #pool-header {
+      padding: 6px 10px;
+      border-bottom: 1px solid #5a3e10;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+      color: #c09040;
+    }
+    #pool-header .hint { font-size: 10px; color: #705030; font-weight: 400; }
+    #pool-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      align-content: start;
+    }
+    #pool-list::-webkit-scrollbar { width: 6px; }
+    #pool-list::-webkit-scrollbar-track { background: #1a1209; }
+    #pool-list::-webkit-scrollbar-thumb { background: #5a3e10; border-radius: 3px; }
+
+    .pool-sep {
+      grid-column: 1 / -1;
+      font-size: 10px;
+      font-weight: 600;
+      color: #907850;
+      padding: 5px 2px 2px;
+      border-top: 1px solid #3a2a0c;
+      margin-top: 4px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .pool-sep:first-child { margin-top: 0; border-top: none; }
+
+    .pool-entry {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding: 4px 3px;
+      background: #1a1209;
+      border: 1px solid #3a2a0c;
+      border-radius: 4px;
+      cursor: grab;
+      transition: border-color 0.12s;
+    }
+    .pool-entry:hover  { border-color: #9a7030; }
+    .pool-entry:active { cursor: grabbing; }
+    .pool-entry img {
+      width: 68px;
+      height: 68px;
+      object-fit: contain;
+      flex-shrink: 0;
+      border-radius: 2px;
+    }
+    .pool-entry .entry-name {
+      font-size: 8px;
+      color: #706040;
+      line-height: 1.2;
+      text-align: center;
+      word-break: break-all;
+    }
+
+    /* ===== Drag ghost ===== */
+    #drag-ghost {
+      position: fixed;
+      pointer-events: none;
+      z-index: 1000;
+      opacity: 0.85;
+      display: none;
+    }
+    #drag-ghost img {
+      display: block;
+      border: 2px solid #c09040;
+      border-radius: 3px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+    }
+
+    /* ===== Context menu ===== */
+    #ctx-menu {
+      position: fixed;
+      background: #2a1e08;
+      border: 1px solid #7a5a20;
+      border-radius: 6px;
+      padding: 4px 0;
+      z-index: 800;
+      min-width: 160px;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.7);
+      display: none;
+    }
+    .ctx-entry { padding: 7px 14px; font-size: 12px; cursor: pointer; color: #e0d8c0; }
+    .ctx-entry:hover { background: #3a2a0c; }
+    .ctx-entry.danger { color: #f38ba8; }
+    .ctx-entry.danger:hover { background: #2e1010; }
+
+    /* ===== Panneaux flottants ===== */
+    .float-panel {
+      position: fixed;
+      background: #2a1e08;
+      border: 1px solid #7a5a20;
+      border-radius: 6px;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.75);
+      z-index: 200;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+      resize: both;
+      min-width: 160px;
+      min-height: 100px;
+    }
+    .float-panel.visible { display: flex; }
+    .float-titlebar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 8px;
+      background: #3a2a0c;
+      cursor: move;
+      font-size: 11px;
+      font-weight: 600;
+      color: #c09040;
+      flex-shrink: 0;
+      user-select: none;
+      letter-spacing: 0.04em;
+    }
+    .float-close {
+      background: none;
+      border: none;
+      color: #907850;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      padding: 0 2px;
+    }
+    .float-close:hover { color: #f38ba8; }
+    .float-body { overflow: auto; flex: 1; }
+    .float-body img:not(.panic-token) { display: block; width: 100%; height: auto; }
+
+    /* Tableau : image tournée -90° — positionnement absolu */
+    #tableau-panel .float-body {
+      overflow: hidden;
+      position: relative;
+      flex: 1;
+      flex-shrink: 0;
+    }
+    #tableau-panel .float-body img {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(-90deg);
+      max-width: none;
+    }
+
+    /* Paniques : retournement simple 180° */
+    #panic-b-panel .float-body img:not(.panic-token),
+    #panic-r-panel .float-body img:not(.panic-token) {
+      transform: rotate(180deg);
+    }
+
+    /* Corps des paniques : position relative pour les tokens */
+    #panic-b-panel .float-body,
+    #panic-r-panel .float-body {
+      position: relative;
+    }
+    /* Highlight drop sur panneau panique */
+    #panic-b-panel.panic-drop-target { outline: 2px solid #80b0ff; outline-offset: -2px; }
+    #panic-r-panel.panic-drop-target { outline: 2px solid #ff8080; outline-offset: -2px; }
+
+    /* Tokens placés sur les paniques */
+    .panic-token {
+      position: absolute;
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+      cursor: grab;
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,0.9));
+      border-radius: 3px;
+      transition: filter 0.1s;
+    }
+    .panic-token:hover { filter: drop-shadow(0 0 6px rgba(255,220,100,0.9)); }
+    .panic-token:active { cursor: grabbing; }
+
+    /* Couleurs selon camp */
+    #panic-b-panel .float-titlebar { background: #0e2040; color: #80b0ff; border-bottom: 1px solid #1a4080; }
+    #panic-b-panel { border-color: #2a5aa0; }
+    #panic-r-panel .float-titlebar { background: #401010; color: #ff8080; border-bottom: 1px solid #802020; }
+    #panic-r-panel { border-color: #a02020; }
+  </style>
+</head>
+<body>
+
+<div id="toolbar">
+  <button id="btn-fit" title="Ajuster la vue (F)">Ajuster</button>
+  <div class="tb-sep"></div>
+  <span id="zoom-label">100%</span>
+  <div class="tb-sep"></div>
+  <select id="map-select" title="Charger une carte de scénario">
+    <option value="">— Carte —</option>
+    <option value="assets/mapa.jpg">Carte A</option>
+    <option value="assets/mapb.jpg">Carte B</option>
+    <option value="assets/mapc.jpg">Carte C</option>
+    <option value="assets/mapd.jpg">Carte D</option>
+    <option value="assets/mapdn.jpg">Carte Dn</option>
+    <option value="assets/mape.jpg">Carte E</option>
+    <option value="assets/mapf.jpg">Carte F</option>
+    <option value="assets/mapg.jpg">Carte G</option>
+    <option value="assets/maph.jpg">Carte H</option>
+  </select>
+  <div class="tb-sep"></div>
+  <button id="btn-save-game" title="Sauvegarder la partie">Sauvegarder</button>
+  <button id="btn-load-game" title="Charger une partie sauvegardée">Charger</button>
+  <input type="file" id="file-input-game" accept=".json" style="display:none">
+  <div class="tb-sep"></div>
+  <button id="btn-tableau" title="Afficher/masquer le tableau de jeu">Tableau</button>
+  <button id="btn-panic-b" title="Tableau de panique — Bleus">Panique ◆</button>
+  <button id="btn-panic-r" title="Tableau de panique — Rouges">Panique ●</button>
+  <div class="tb-sep"></div>
+  <button id="btn-dice" title="Lancer un dé 6">🎲</button>
+  <span id="dice-result" title="Résultat du dé"></span>
+</div>
+
+<div id="main">
+  <div id="canvas-area">
+    <canvas id="main-canvas"></canvas>
+  </div>
+  <div id="pool-panel">
+    <div id="pool-header">
+      Pions <span class="hint">glisser → carte</span>
+    </div>
+    <div id="pool-list"></div>
+  </div>
+</div>
+
+<!-- Tableau flottant -->
+<div id="tableau-panel" class="float-panel" style="width:520px; top:60px; left:80px;">
+  <div class="float-titlebar">
+    <span>Tableau de jeu</span>
+    <button class="float-close">×</button>
+  </div>
+  <div class="float-body">
+    <img src="assets/tableau.jpg" alt="Tableau" draggable="false">
+  </div>
+</div>
+
+<!-- Panique Bleus -->
+<div id="panic-b-panel" class="float-panel" style="width:400px; top:60px; left:200px;">
+  <div class="float-titlebar">
+    <span>◆ Panique — Bleus</span>
+    <button class="float-close">×</button>
+  </div>
+  <div class="float-body">
+    <img src="assets/panic.jpg" alt="Tableau Panique" draggable="false">
+  </div>
+</div>
+
+<!-- Panique Rouges -->
+<div id="panic-r-panel" class="float-panel" style="width:400px; top:60px; left:640px;">
+  <div class="float-titlebar">
+    <span>● Panique — Rouges</span>
+    <button class="float-close">×</button>
+  </div>
+  <div class="float-body">
+    <img src="assets/panic.jpg" alt="Tableau Panique" draggable="false">
+  </div>
+</div>
+
+<div id="drag-ghost"><img id="ghost-img" src="" alt=""></div>
+
+<div id="ctx-menu">
+  <div class="ctx-entry danger" id="ctx-remove">Retirer de la carte</div>
+</div>
+
+<script>
+// ============================================================
+// Pions — groupés par camp, fichiers dans pions/
+// ============================================================
+const GROUPS = [
+  {
+    label: 'Bleus',
+    pions: [
+      'b0A3','b16','b1B2','b1B3','b1B4','b21','b23','b25','b32','b44','bel',
+      'bf1A3','bf23','bf26','bf2B3','bf3A2','bf42','bf45','bf4B4','bf61','bf 84',
+      'ldrb'
+    ]
+  },
+  {
+    label: 'Rouges',
+    pions: [
+      'r0A3','r16','r1B2','r1B3','r1B4','r21','r23','r25','r32','r44','rel',
+      'rf1A3','rf23','rf26','rf2B3','rf3A2','rf42','rf45','rf4B4','rf61','rf63','rf84',
+      'ldrr'
+    ]
+  },
+  {
+    label: 'Spéciaux',
+    pions: ['chariots','chariotsr','elb63','px1','px10','turn','volley','sinking']
+  }
+];
+
+// Aplatir en tableau global avec index
+const PIONS = [];
+const GROUP_INFO = [];
+GROUPS.forEach(g => {
+  const startIdx = PIONS.length;
+  g.pions.forEach(name => {
+    PIONS.push({ name, file: 'pions/' + name + '.jpg' });
+  });
+  GROUP_INFO.push({ label: g.label, startIdx, count: g.pions.length });
+});
+
+// ============================================================
+// État
+// ============================================================
+const view = { offsetX: 0, offsetY: 0, zoom: 1 };
+let placedTokens = [];
+let tokenIdSeq   = 0;
+let currentMap   = '';
+
+let panning        = false;
+let panStartClient = null;
+let panStartView   = null;
+let tokenDrag      = null;   // drag token sur canvas
+let poolDrag       = null;   // drag depuis le pool
+let panelDrag      = null;   // drag panneau flottant
+let panicTokenDrag = null;   // drag token sur panneau panique
+let ctxTargetIdx   = -1;
+
+// ============================================================
+// DOM
+// ============================================================
+const canvasArea = document.getElementById('canvas-area');
+const canvas     = document.getElementById('main-canvas');
+const ctx        = canvas.getContext('2d');
+const poolPanel  = document.getElementById('pool-panel');
+const poolList   = document.getElementById('pool-list');
+const dragGhost  = document.getElementById('drag-ghost');
+const ghostImg   = document.getElementById('ghost-img');
+const ctxMenu    = document.getElementById('ctx-menu');
+const zoomLabel  = document.getElementById('zoom-label');
+
+// ============================================================
+// Chargement images
+// ============================================================
+const mapImage   = new Image();
+const pionImages = {};
+
+mapImage.onload = () => { fitView(); render(); };
+
+PIONS.forEach(p => {
+  const img = new Image();
+  img.onload = () => render();
+  img.src = p.file;
+  pionImages[p.file] = img;
+});
+
+// ============================================================
+// Pool panel — grille 3 colonnes
+// ============================================================
+GROUP_INFO.forEach(g => {
+  const sep = document.createElement('div');
+  sep.className = 'pool-sep';
+  sep.textContent = g.label;
+  poolList.appendChild(sep);
+
+  for (let i = g.startIdx; i < g.startIdx + g.count; i++) {
+    const pion  = PIONS[i];
+    const entry = document.createElement('div');
+    entry.className = 'pool-entry';
+    entry.title = pion.name;
+
+    const img = document.createElement('img');
+    img.src = pion.file;
+    img.alt = pion.name;
+    entry.appendChild(img);
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'entry-name';
+    nameEl.textContent = pion.name;
+    entry.appendChild(nameEl);
+
+    const idx = i;
+    entry.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      beginPoolDrag(idx, e);
+    });
+
+    poolList.appendChild(entry);
+  }
+});
+
+// ============================================================
+// Sélecteur de carte
+// ============================================================
+document.getElementById('map-select').addEventListener('change', function () {
+  const src = this.value;
+  if (!src) return;
+  currentMap  = src;
+  mapImage.src = src;
+  placedTokens = [];
+  render();
+});
+
+// ============================================================
+// Transformées vue ↔ carte
+// ============================================================
+function screenToMap(sx, sy) {
+  return { x: (sx - view.offsetX) / view.zoom, y: (sy - view.offsetY) / view.zoom };
+}
+
+function setZoom(z, cx, cy) {
+  const prev = view.zoom;
+  view.zoom  = Math.max(0.05, Math.min(12, z));
+  if (cx !== undefined) {
+    view.offsetX = cx - (cx - view.offsetX) * (view.zoom / prev);
+    view.offsetY = cy - (cy - view.offsetY) * (view.zoom / prev);
+  }
+  zoomLabel.textContent = Math.round(view.zoom * 100) + '%';
+  render();
+}
+
+function fitView() {
+  if (!mapImage.naturalWidth) return;
+  const W = canvasArea.clientWidth;
+  const H = canvasArea.clientHeight;
+  view.zoom    = Math.min(W / mapImage.naturalWidth, H / mapImage.naturalHeight);
+  view.offsetX = (W - mapImage.naturalWidth  * view.zoom) / 2;
+  view.offsetY = (H - mapImage.naturalHeight * view.zoom) / 2;
+  zoomLabel.textContent = Math.round(view.zoom * 100) + '%';
+}
+
+// ============================================================
+// Resize canvas
+// ============================================================
+new ResizeObserver(() => {
+  canvas.width  = canvasArea.clientWidth;
+  canvas.height = canvasArea.clientHeight;
+  render();
+}).observe(canvasArea);
+
+// ============================================================
+// Render
+// ============================================================
+function render() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  if (mapImage.complete && mapImage.naturalWidth > 0) {
+    ctx.drawImage(mapImage,
+      view.offsetX, view.offsetY,
+      mapImage.naturalWidth  * view.zoom,
+      mapImage.naturalHeight * view.zoom);
+  }
+
+  placedTokens.forEach(tok => {
+    const p   = PIONS[tok.pionIdx];
+    const img = pionImages[p.file];
+    if (!img || !img.complete) return;
+    const sx = tok.x * view.zoom + view.offsetX;
+    const sy = tok.y * view.zoom + view.offsetY;
+    const sw = tok.w * view.zoom;
+    const sh = tok.h * view.zoom;
+    if (tok.rotation) {
+      ctx.save();
+      ctx.translate(sx + sw / 2, sy + sh / 2);
+      ctx.rotate(tok.rotation * Math.PI / 180);
+      ctx.drawImage(img, -sw / 2, -sh / 2, sw, sh);
+      ctx.restore();
+    } else {
+      ctx.drawImage(img, sx, sy, sw, sh);
+    }
+  });
+}
+
+// ============================================================
+// Hit test pions placés
+// ============================================================
+function tokenAt(sx, sy) {
+  const m = screenToMap(sx, sy);
+  for (let i = placedTokens.length - 1; i >= 0; i--) {
+    const t = placedTokens[i];
+    if (m.x >= t.x && m.x <= t.x + t.w && m.y >= t.y && m.y <= t.y + t.h) return i;
+  }
+  return -1;
+}
+
+// ============================================================
+// Molette
+// ============================================================
+canvasArea.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r  = canvasArea.getBoundingClientRect();
+  const sx = e.clientX - r.left;
+  const sy = e.clientY - r.top;
+  const ti = tokenAt(sx, sy);
+  if (ti >= 0) {
+    // Rotation du pion : ±60° selon sens molette
+    const tok = placedTokens[ti];
+    tok.rotation = (((tok.rotation || 0) + (e.deltaY < 0 ? -60 : 60)) + 720) % 360;
+    render();
+  } else {
+    setZoom(view.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1), sx, sy);
+  }
+}, { passive: false });
+
+// ============================================================
+// Canvas mousedown
+// ============================================================
+canvasArea.addEventListener('mousedown', e => {
+  closeCtxMenu();
+  const r  = canvasArea.getBoundingClientRect();
+  const sx = e.clientX - r.left;
+  const sy = e.clientY - r.top;
+  if (e.button === 0) {
+    const ti = tokenAt(sx, sy);
+    if (ti >= 0) { e.preventDefault(); beginTokenDrag(ti, sx, sy); }
+    else beginPan(e);
+  } else if (e.button === 1) { e.preventDefault(); beginPan(e); }
+});
+
+// ============================================================
+// Clic droit
+// ============================================================
+canvasArea.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const r  = canvasArea.getBoundingClientRect();
+  const ti = tokenAt(e.clientX - r.left, e.clientY - r.top);
+  if (ti >= 0) { ctxTargetIdx = ti; showCtxMenu(e.clientX, e.clientY); }
+});
+
+// Curseur survol
+canvasArea.addEventListener('mousemove', e => {
+  if (tokenDrag || panning || poolDrag) return;
+  const r = canvasArea.getBoundingClientRect();
+  canvasArea.style.cursor =
+    tokenAt(e.clientX - r.left, e.clientY - r.top) >= 0 ? 'pointer' : 'grab';
+});
+
+// ============================================================
+// Pan
+// ============================================================
+function beginPan(e) {
+  panning        = true;
+  panStartClient = { x: e.clientX, y: e.clientY };
+  panStartView   = { x: view.offsetX, y: view.offsetY };
+  canvasArea.classList.add('panning');
+}
+
+// ============================================================
+// Token drag (canvas)
+// ============================================================
+function beginTokenDrag(ti, sx, sy) {
+  const tok = placedTokens[ti];
+  const m   = screenToMap(sx, sy);
+  tokenDrag = { tokenIdx: ti, offsetMX: m.x - tok.x, offsetMY: m.y - tok.y };
+  const t   = placedTokens.splice(ti, 1)[0];
+  placedTokens.push(t);
+  tokenDrag.tokenIdx = placedTokens.length - 1;
+  canvasArea.classList.add('dragging-token');
+  render();
+}
+
+// ============================================================
+// Pool drag
+// ============================================================
+function beginPoolDrag(pionIdx, e) {
+  const pion  = PIONS[pionIdx];
+  const img   = pionImages[pion.file];
+  const nw    = (img && img.naturalWidth)  ? img.naturalWidth  : 80;
+  const nh    = (img && img.naturalHeight) ? img.naturalHeight : 80;
+  const scale = Math.min(72 / nw, 72 / nh);
+  const gw    = Math.round(nw * scale);
+  const gh    = Math.round(nh * scale);
+  poolDrag = { pionIdx, nw, nh, offsetX: gw / 2, offsetY: gh / 2 };
+  ghostImg.src          = pion.file;
+  ghostImg.style.width  = gw + 'px';
+  ghostImg.style.height = gh + 'px';
+  dragGhost.style.left  = (e.clientX - gw / 2) + 'px';
+  dragGhost.style.top   = (e.clientY - gh / 2) + 'px';
+  dragGhost.style.display = 'block';
+}
+
+// ============================================================
+// document mousemove — tous les drags
+// ============================================================
+document.addEventListener('mousemove', e => {
+
+  // Drag panneau flottant
+  if (panelDrag) {
+    const { panel, startX, startY, origLeft, origTop } = panelDrag;
+    const nl = Math.max(0, Math.min(window.innerWidth  - panel.offsetWidth,  origLeft + e.clientX - startX));
+    const nt = Math.max(0, Math.min(window.innerHeight - panel.offsetHeight, origTop  + e.clientY - startY));
+    panel.style.left = nl + 'px';
+    panel.style.top  = nt + 'px';
+    return;
+  }
+
+  // Drag token sur panneau panique
+  if (panicTokenDrag) {
+    const dx = e.clientX - panicTokenDrag.startX;
+    const dy = e.clientY - panicTokenDrag.startY;
+    panicTokenDrag.tok.x = panicTokenDrag.origX + dx;
+    panicTokenDrag.tok.y = panicTokenDrag.origY + dy;
+    panicTokenDrag.img.style.left = panicTokenDrag.tok.x + 'px';
+    panicTokenDrag.img.style.top  = panicTokenDrag.tok.y + 'px';
+    return;
+  }
+
+  // Drag depuis pool
+  if (poolDrag) {
+    dragGhost.style.left = (e.clientX - poolDrag.offsetX) + 'px';
+    dragGhost.style.top  = (e.clientY - poolDrag.offsetY) + 'px';
+    const r = canvasArea.getBoundingClientRect();
+    const overCanvas = e.clientX >= r.left && e.clientX <= r.right &&
+                       e.clientY >= r.top  && e.clientY <= r.bottom;
+    canvasArea.classList.toggle('drop-target', overCanvas);
+    // Highlight paniques
+    for (const side of ['b', 'r']) {
+      const pb = document.querySelector('#panic-' + side + '-panel .float-body').getBoundingClientRect();
+      document.getElementById('panic-' + side + '-panel').classList.toggle('panic-drop-target',
+        e.clientX >= pb.left && e.clientX <= pb.right &&
+        e.clientY >= pb.top  && e.clientY <= pb.bottom);
+    }
+    return;
+  }
+
+  // Drag token canvas
+  if (tokenDrag) {
+    const r   = canvasArea.getBoundingClientRect();
+    const m   = screenToMap(e.clientX - r.left, e.clientY - r.top);
+    const tok = placedTokens[tokenDrag.tokenIdx];
+    tok.x = m.x - tokenDrag.offsetMX;
+    tok.y = m.y - tokenDrag.offsetMY;
+    const pr = poolPanel.getBoundingClientRect();
+    poolPanel.classList.toggle('delete-target',
+      e.clientX >= pr.left && e.clientX <= pr.right &&
+      e.clientY >= pr.top  && e.clientY <= pr.bottom);
+    render();
+    return;
+  }
+
+  // Pan
+  if (panning) {
+    view.offsetX = panStartView.x + (e.clientX - panStartClient.x);
+    view.offsetY = panStartView.y + (e.clientY - panStartClient.y);
+    render();
+  }
+});
+
+// ============================================================
+// document mouseup
+// ============================================================
+document.addEventListener('mouseup', e => {
+
+  // Fin drag panneau
+  if (panelDrag) { panelDrag = null; return; }
+
+  // Fin drag token panique
+  if (panicTokenDrag) {
+    savePanicState();
+    panicTokenDrag = null;
+    return;
+  }
+
+  // Fin drag pool
+  if (poolDrag) {
+    dragGhost.style.display = 'none';
+    canvasArea.classList.remove('drop-target');
+    for (const s of ['b', 'r'])
+      document.getElementById('panic-' + s + '-panel').classList.remove('panic-drop-target');
+
+    // Drop sur panneau panique ?
+    let droppedOnPanic = false;
+    for (const side of ['b', 'r']) {
+      const body = document.querySelector('#panic-' + side + '-panel .float-body');
+      const pb   = body.getBoundingClientRect();
+      if (e.clientX >= pb.left && e.clientX <= pb.right &&
+          e.clientY >= pb.top  && e.clientY <= pb.bottom) {
+        const tok = {
+          id: ++tokenIdSeq,
+          pionIdx: poolDrag.pionIdx,
+          x: e.clientX - pb.left - 24,
+          y: e.clientY - pb.top  - 24
+        };
+        panicState[side].push(tok);
+        createPanicTokenEl(side, tok);
+        savePanicState();
+        droppedOnPanic = true;
+        break;
+      }
+    }
+
+    // Drop sur la carte
+    if (!droppedOnPanic) {
+      const r = canvasArea.getBoundingClientRect();
+      if (e.clientX >= r.left && e.clientX <= r.right &&
+          e.clientY >= r.top  && e.clientY <= r.bottom) {
+        const m  = screenToMap(e.clientX - r.left, e.clientY - r.top);
+        const tw = Math.round(poolDrag.nw * 2 / 3);
+        const th = Math.round(poolDrag.nh * 2 / 3);
+        placedTokens.push({
+          id: ++tokenIdSeq,
+          pionIdx: poolDrag.pionIdx,
+          x: m.x - tw / 2,
+          y: m.y - th / 2,
+          w: tw,
+          h: th
+        });
+        render();
+      }
+    }
+    poolDrag = null;
+    return;
+  }
+
+  // Fin drag token canvas
+  if (tokenDrag) {
+    poolPanel.classList.remove('delete-target');
+    const pr = poolPanel.getBoundingClientRect();
+    if (e.clientX >= pr.left && e.clientX <= pr.right &&
+        e.clientY >= pr.top  && e.clientY <= pr.bottom) {
+      placedTokens.splice(tokenDrag.tokenIdx, 1);
+      render();
+    }
+    tokenDrag = null;
+    canvasArea.classList.remove('dragging-token');
+    canvasArea.style.cursor = 'grab';
+    return;
+  }
+
+  // Fin pan
+  if (panning) {
+    panning = false;
+    canvasArea.classList.remove('panning');
+  }
+});
+
+// ============================================================
+// Panneaux flottants — drag + toggle
+// ============================================================
+function initFloatPanel(panelId, btnId) {
+  const panel    = document.getElementById(panelId);
+  const btn      = btnId ? document.getElementById(btnId) : null;
+  const titlebar = panel.querySelector('.float-titlebar');
+  const closeBtn = panel.querySelector('.float-close');
+
+  if (btn) {
+    btn.addEventListener('click', () => {
+      const vis = panel.classList.toggle('visible');
+      btn.classList.toggle('active', vis);
+    });
+  }
+
+  closeBtn.addEventListener('click', () => {
+    panel.classList.remove('visible');
+    if (btn) btn.classList.remove('active');
+  });
+
+  titlebar.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const rect = panel.getBoundingClientRect();
+    panel.style.right  = 'auto';
+    panel.style.bottom = 'auto';
+    panelDrag = { panel, startX: e.clientX, startY: e.clientY, origLeft: rect.left, origTop: rect.top };
+  });
+}
+
+initFloatPanel('tableau-panel', 'btn-tableau');
+initFloatPanel('panic-b-panel', 'btn-panic-b');
+initFloatPanel('panic-r-panel', 'btn-panic-r');
+
+// ============================================================
+// Tokens sur panneaux panique — état + persistance localStorage
+// ============================================================
+const PANIC_LS_KEY = 'ancients-panic-tokens';
+
+// État : pions placés sur chaque panneau panique
+const panicState = { b: [], r: [] };
+
+function savePanicState() {
+  localStorage.setItem(PANIC_LS_KEY, JSON.stringify(panicState));
+}
+
+// Crée l'élément img d'un token panique et l'insère dans le body du panneau
+function createPanicTokenEl(side, tok) {
+  const body = document.querySelector('#panic-' + side + '-panel .float-body');
+  const img  = document.createElement('img');
+  img.className   = 'panic-token';
+  img.src         = PIONS[tok.pionIdx].file;
+  img.alt         = PIONS[tok.pionIdx].name;
+  img.draggable   = false;
+  img.style.left  = tok.x + 'px';
+  img.style.top   = tok.y + 'px';
+  img.dataset.tokId = tok.id;
+
+  // Drag dans le panneau
+  img.addEventListener('mousedown', ev => {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    panicTokenDrag = {
+      side, tok, img,
+      startX: ev.clientX, startY: ev.clientY,
+      origX: tok.x, origY: tok.y
+    };
+    img.style.cursor = 'grabbing';
+  });
+
+  // Clic droit : retirer (mais l'état localStorage garde trace du pionIdx)
+  img.addEventListener('contextmenu', ev => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const arr = panicState[side];
+    const idx = arr.findIndex(t => t.id === tok.id);
+    if (idx >= 0) arr.splice(idx, 1);
+    img.remove();
+    savePanicState();
+  });
+
+  body.appendChild(img);
+}
+
+// Restaure les tokens depuis localStorage
+function loadPanicState() {
+  const saved = JSON.parse(localStorage.getItem(PANIC_LS_KEY) || 'null');
+  if (!saved) return;
+  for (const side of ['b', 'r']) {
+    if (!Array.isArray(saved[side])) continue;
+    // Filtrer les pionIdx valides
+    panicState[side] = saved[side].filter(
+      t => Number.isFinite(t.pionIdx) && t.pionIdx >= 0 && t.pionIdx < PIONS.length
+    );
+    panicState[side].forEach(tok => createPanicTokenEl(side, tok));
+  }
+}
+
+loadPanicState();
+
+// ============================================================
+// Context menu
+// ============================================================
+function showCtxMenu(x, y) {
+  ctxMenu.style.left    = x + 'px';
+  ctxMenu.style.top     = y + 'px';
+  ctxMenu.style.display = 'block';
+}
+function closeCtxMenu() { ctxMenu.style.display = 'none'; ctxTargetIdx = -1; }
+
+document.getElementById('ctx-remove').addEventListener('click', () => {
+  if (ctxTargetIdx >= 0) { placedTokens.splice(ctxTargetIdx, 1); render(); }
+  closeCtxMenu();
+});
+
+document.addEventListener('mousedown', e => {
+  if (!ctxMenu.contains(e.target)) closeCtxMenu();
+});
+
+// ============================================================
+// Clavier
+// ============================================================
+document.addEventListener('keydown', e => {
+  if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+  if (e.key === 'f' || e.key === 'F') { fitView(); render(); }
+  if (e.key === '+' || e.key === '=') setZoom(view.zoom * 1.2);
+  if (e.key === '-') setZoom(view.zoom / 1.2);
+  if ((e.key === 'Delete' || e.key === 'Backspace') && ctxTargetIdx >= 0) {
+    placedTokens.splice(ctxTargetIdx, 1);
+    closeCtxMenu();
+    render();
+  }
+});
+
+document.getElementById('btn-fit').addEventListener('click', () => { fitView(); render(); });
+
+// ============================================================
+// Sauvegarde / Chargement
+// ============================================================
+const fileInputGame = document.getElementById('file-input-game');
+
+async function saveGame() {
+  const data = {
+    version: 2,
+    map: currentMap,
+    tokens: placedTokens.map(t => ({ pionIdx: t.pionIdx, x: t.x, y: t.y, w: t.w, h: t.h, rotation: t.rotation || 0 }))
+  };
+  const json = JSON.stringify(data, null, 2);
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: 'partie-ancients.json',
+        types: [{ description: 'Fichier JSON', accept: { 'application/json': ['.json'] } }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      return;
+    } catch (err) { if (err.name === 'AbortError') return; }
+  }
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([json], { type: 'application/json' })),
+    download: 'partie-ancients.json'
+  });
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function loadGame(file) {
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (!Array.isArray(data.tokens)) throw new Error('"tokens" manquant');
+      if (data.map) {
+        currentMap = data.map;
+        mapImage.src = data.map;
+        document.getElementById('map-select').value = data.map;
+      }
+      placedTokens = data.tokens
+        .filter(t => Number.isFinite(t.pionIdx) && t.pionIdx >= 0 && t.pionIdx < PIONS.length)
+        .map(t => ({ id: ++tokenIdSeq, pionIdx: t.pionIdx, x: t.x, y: t.y, w: t.w || 80, h: t.h || 80, rotation: t.rotation || 0 }));
+      render();
+    } catch (err) { alert('Erreur : ' + err.message); }
+  };
+  reader.readAsText(file);
+}
+
+document.getElementById('btn-save-game').addEventListener('click', saveGame);
+document.getElementById('btn-load-game').addEventListener('click', () => fileInputGame.click());
+fileInputGame.addEventListener('change', e => {
+  if (e.target.files[0]) loadGame(e.target.files[0]);
+  fileInputGame.value = '';
+});
+
+// ============================================================
+// Tableau — redimensionnable avec mémoire (localStorage)
+// Image tournée -90° : bodyWidth → hauteur img, bodyHeight → largeur img
+// ============================================================
+const tableauPanel    = document.getElementById('tableau-panel');
+const tableauBody     = tableauPanel.querySelector('.float-body');
+const tableauImgEl    = tableauPanel.querySelector('.float-body img');
+const TABLEAU_LS_KEY  = 'ancients-tableau-size';
+let   saveTableauTimer = null;
+
+// Adapte l'image aux dimensions actuelles du body
+function fitTableauImg() {
+  const bw = tableauBody.offsetWidth;
+  const bh = tableauBody.offsetHeight;
+  if (!bw || !bh) return;
+  // Après rotate(-90°) : l'image.width s'affiche comme hauteur, et vice-versa
+  tableauImgEl.style.width  = bh + 'px';
+  tableauImgEl.style.height = bw + 'px';
+}
+
+// Dimensionne le panneau (taille sauvegardée ou calculée depuis l'image)
+function sizeTableauPanel() {
+  if (!tableauImgEl.naturalWidth) return;
+  const saved = JSON.parse(localStorage.getItem(TABLEAU_LS_KEY) || 'null');
+  if (saved) {
+    tableauPanel.style.width  = saved.w + 'px';
+    tableauPanel.style.height = saved.h + 'px';
+    // fitTableauImg sera appelé par le ResizeObserver
+  } else {
+    const W = tableauImgEl.naturalWidth;
+    const H = tableauImgEl.naturalHeight;
+    const scale     = Math.min((window.innerWidth * 0.75) / H, 1);
+    const titlebarH = tableauPanel.querySelector('.float-titlebar').offsetHeight || 28;
+    tableauPanel.style.width  = Math.round(H * scale) + 'px';
+    tableauPanel.style.height = Math.round(W * scale + titlebarH) + 'px';
+  }
+}
+
+// ResizeObserver : réagit au redimensionnement (user drag ou sizeTableauPanel)
+new ResizeObserver(() => {
+  fitTableauImg();
+  // Sauvegarde debounced
+  clearTimeout(saveTableauTimer);
+  saveTableauTimer = setTimeout(() => {
+    localStorage.setItem(TABLEAU_LS_KEY, JSON.stringify({
+      w: tableauPanel.offsetWidth,
+      h: tableauPanel.offsetHeight
+    }));
+  }, 400);
+}).observe(tableauBody);
+
+// Initialisation au chargement de l'image
+if (tableauImgEl.complete && tableauImgEl.naturalWidth) sizeTableauPanel();
+else tableauImgEl.addEventListener('load', sizeTableauPanel);
+
+// ============================================================
+// Jet de dé 6
+// ============================================================
+const DICE_FACES = ['⚀','⚁','⚂','⚃','⚄','⚅'];
+const diceResult = document.getElementById('dice-result');
+
+document.getElementById('btn-dice').addEventListener('click', () => {
+  const roll = Math.floor(Math.random() * 6);
+  diceResult.classList.remove('rolling', 'show');
+  void diceResult.offsetWidth;
+  diceResult.textContent = DICE_FACES[roll];
+  diceResult.title = 'Résultat : ' + (roll + 1);
+  diceResult.classList.add('rolling', 'show');
+});
+</script>
+</body>
+</html>
