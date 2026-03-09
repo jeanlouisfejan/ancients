@@ -110,6 +110,32 @@
       color: #c09040;
     }
     #pool-header .hint { font-size: 10px; color: #705030; font-weight: 400; }
+    #btn-add-pion {
+      padding: 1px 7px;
+      background: #2a1e08;
+      color: #c09040;
+      border: 1px solid #5a3e10;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1.2;
+    }
+    #btn-add-pion:hover { background: #5a3e10; }
+    .pool-entry .entry-del {
+      display: none;
+      position: absolute;
+      top: 2px; right: 2px;
+      background: rgba(40,10,10,0.85);
+      color: #f38ba8;
+      border: none;
+      border-radius: 2px;
+      font-size: 11px;
+      line-height: 1;
+      padding: 1px 3px;
+      cursor: pointer;
+    }
+    .pool-entry { position: relative; }
+    .pool-entry:hover .entry-del { display: block; }
     #pool-list {
       flex: 1;
       overflow-y: auto;
@@ -330,9 +356,11 @@
   <div id="pool-panel">
     <div id="pool-header">
       Pions <span class="hint">glisser → carte</span>
+      <button id="btn-add-pion" title="Charger des images externes">+</button>
     </div>
     <div id="pool-list"></div>
   </div>
+  <input type="file" id="file-input-pion" accept="image/*" multiple style="display:none">
 </div>
 
 <!-- Tableau flottant -->
@@ -384,7 +412,7 @@ const GROUPS = [
     pions: [
       'b0A3','b16','b1B2','b1B3','b1B4','b21','b23','b25','b32','b44','bel',
       'bf1A3','bf23','bf26','bf2B3','bf3A2','bf42','bf45','bf4B4','bf61','bf 84',
-      'ldrb'
+      'ldrb','elb63'
     ]
   },
   {
@@ -397,7 +425,7 @@ const GROUPS = [
   },
   {
     label: 'Spéciaux',
-    pions: ['chariots','chariotsr','elb63','px1','px10','turn','volley','sinking']
+    pions: ['chariots','chariotsr','px1','px10','turn','volley','sinking']
   }
 ];
 
@@ -940,6 +968,130 @@ function loadPanicState() {
 }
 
 loadPanicState();
+
+// ============================================================
+// Pions personnalisés — chargement externe + persistance
+// ============================================================
+const CUSTOM_PIONS_LS_KEY = 'ancients-custom-pions';
+
+// Ajoute un pion custom au tableau PIONS et à l'UI du pool
+function addCustomPionToPool(idx) {
+  const pion = PIONS[idx];
+
+  // Séparateur "Personnalisés" créé une seule fois
+  if (!document.getElementById('pool-sep-custom')) {
+    const sep = document.createElement('div');
+    sep.id = 'pool-sep-custom';
+    sep.className = 'pool-sep';
+    sep.textContent = 'Personnalisés';
+    poolList.appendChild(sep);
+  }
+
+  const entry = document.createElement('div');
+  entry.className = 'pool-entry';
+  entry.title = pion.name;
+
+  const img = document.createElement('img');
+  img.src = pion.file;
+  img.alt = pion.name;
+  entry.appendChild(img);
+
+  const nameEl = document.createElement('div');
+  nameEl.className = 'entry-name';
+  nameEl.textContent = pion.name;
+  entry.appendChild(nameEl);
+
+  // Bouton × pour supprimer ce pion custom
+  const delBtn = document.createElement('button');
+  delBtn.className = 'entry-del';
+  delBtn.textContent = '×';
+  delBtn.title = 'Supprimer du pool';
+  delBtn.addEventListener('mousedown', ev => ev.stopPropagation());
+  delBtn.addEventListener('click', ev => {
+    ev.stopPropagation();
+    // Retirer de PIONS (mettre null pour garder les indices des tokens existants)
+    PIONS[idx] = null;
+    // Retirer du localStorage
+    const saved = JSON.parse(localStorage.getItem(CUSTOM_PIONS_LS_KEY) || '[]');
+    const filtered = saved.filter((_, i) => PIONS.indexOf(null) !== idx - BASE_PIONS_COUNT + i);
+    // Reconstruire proprement : on sauve par dataUrl
+    const remaining = saved.filter(p => p.dataUrl !== pion.file);
+    localStorage.setItem(CUSTOM_PIONS_LS_KEY, JSON.stringify(remaining));
+    entry.remove();
+    // Supprimer le séparateur si plus aucun pion custom visible
+    const customEntries = poolList.querySelectorAll('.pool-entry[data-custom]');
+    if (customEntries.length === 0) {
+      document.getElementById('pool-sep-custom')?.remove();
+    }
+  });
+  entry.dataset.custom = '1';
+  entry.appendChild(delBtn);
+
+  entry.addEventListener('mousedown', e => {
+    if (e.button !== 0 || e.target === delBtn) return;
+    e.preventDefault();
+    beginPoolDrag(idx, e);
+  });
+
+  poolList.appendChild(entry);
+}
+
+// Enregistre et charge un pion custom (dataUrl)
+const BASE_PIONS_COUNT = PIONS.length;
+
+function registerCustomPion(name, dataUrl) {
+  // Éviter les doublons
+  if (PIONS.some(p => p && p.file === dataUrl)) return;
+  const pion = { name, file: dataUrl };
+  PIONS.push(pion);
+  const idx = PIONS.length - 1;
+  const img = new Image();
+  img.onload = () => render();
+  img.src = dataUrl;
+  pionImages[dataUrl] = img;
+  addCustomPionToPool(idx);
+}
+
+function loadCustomPions() {
+  const saved = JSON.parse(localStorage.getItem(CUSTOM_PIONS_LS_KEY) || '[]');
+  saved.forEach(p => registerCustomPion(p.name, p.dataUrl));
+}
+
+loadCustomPions();
+
+// Bouton + → ouvre le sélecteur de fichiers
+document.getElementById('btn-add-pion').addEventListener('click', () => {
+  document.getElementById('file-input-pion').click();
+});
+
+document.getElementById('file-input-pion').addEventListener('change', function () {
+  const files = Array.from(this.files);
+  let loaded = 0;
+  const toSave = [];
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const name    = file.name.replace(/\.[^.]+$/, '');
+      const dataUrl = ev.target.result;
+      registerCustomPion(name, dataUrl);
+      toSave.push({ name, dataUrl });
+      loaded++;
+      if (loaded === files.length) {
+        // Fusionner avec l'existant et sauvegarder
+        const existing = JSON.parse(localStorage.getItem(CUSTOM_PIONS_LS_KEY) || '[]');
+        const merged   = [...existing, ...toSave.filter(p =>
+          !existing.some(e => e.dataUrl === p.dataUrl))];
+        try {
+          localStorage.setItem(CUSTOM_PIONS_LS_KEY, JSON.stringify(merged));
+        } catch {
+          alert('Images trop volumineuses pour le localStorage (limite ~5 Mo).');
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+  this.value = '';
+});
 
 // ============================================================
 // Context menu
